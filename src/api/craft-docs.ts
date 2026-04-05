@@ -17,9 +17,39 @@ import type {
 
 // ─── Base URL ─────────────────────────────────────────────────────────────────
 
+/**
+ * Accepts either:
+ *   - A full API URL like "https://connect.craft.do/links/ABC123/api/v1"
+ *   - A full connection URL like "https://connect.craft.do/links/ABC123"
+ *   - Just the secret link ID like "ABC123"
+ *
+ * Returns the clean base URL ending with /api/v1.
+ */
+function resolveBaseUrl(raw: string): string {
+  const trimmed = raw.trim();
+
+  // Already a full URL — return as-is (strip trailing slash, ensure /api/v1)
+  if (trimmed.startsWith("http")) {
+    // If it already ends with /api/v1 (or /api/v1/), use directly
+    if (/\/api\/v1\/?$/.test(trimmed)) {
+      return trimmed.replace(/\/$/, "");
+    }
+    // Full URL without /api/v1 — extract the ID and rebuild
+    const idMatch = trimmed.match(/\/links\/([^/?#]+)/);
+    if (idMatch) {
+      return `https://connect.craft.do/links/${idMatch[1]}/api/v1`;
+    }
+    // Fallback: append /api/v1
+    return `${trimmed.replace(/\/$/, "")}/api/v1`;
+  }
+
+  // Plain secret link ID
+  return `https://connect.craft.do/links/${trimmed}/api/v1`;
+}
+
 function getBaseUrl(): string {
   const prefs = getPreferenceValues<CraftPreferences>();
-  return `https://connect.craft.do/links/${prefs.docsSecretLinkId}/api/v1`;
+  return resolveBaseUrl(prefs.docsSecretLinkId);
 }
 
 // ─── Core request helper ──────────────────────────────────────────────────────
@@ -41,6 +71,17 @@ async function request<T>(
 
   if (!response.ok) {
     const body = await response.text();
+    // Provide a more actionable error for auth failures
+    if (response.status === 401 || response.status === 403) {
+      throw new Error(
+        "Invalid API key. Open Preferences and paste only the Secret Link ID (the alphanumeric string from your Craft API URL, not the full URL)."
+      );
+    }
+    if (response.status === 404 && body.includes("DOCTYPE")) {
+      throw new Error(
+        "API endpoint not found (404). Check that your Secret Link ID is correct — paste only the ID from the URL, not the full URL."
+      );
+    }
     throw new Error(`Craft API ${response.status}: ${body || response.statusText}`);
   }
 

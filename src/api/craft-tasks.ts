@@ -19,9 +19,34 @@ import type {
 
 // ─── Base URL ─────────────────────────────────────────────────────────────────
 
+/**
+ * Accepts either:
+ *   - A full API URL like "https://connect.craft.do/links/ABC123/api/v1"
+ *   - A full connection URL like "https://connect.craft.do/links/ABC123"
+ *   - Just the secret link ID like "ABC123"
+ *
+ * Returns the clean base URL ending with /api/v1.
+ */
+function resolveBaseUrl(raw: string): string {
+  const trimmed = raw.trim();
+
+  if (trimmed.startsWith("http")) {
+    if (/\/api\/v1\/?$/.test(trimmed)) {
+      return trimmed.replace(/\/$/, "");
+    }
+    const idMatch = trimmed.match(/\/links\/([^/?#]+)/);
+    if (idMatch) {
+      return `https://connect.craft.do/links/${idMatch[1]}/api/v1`;
+    }
+    return `${trimmed.replace(/\/$/, "")}/api/v1`;
+  }
+
+  return `https://connect.craft.do/links/${trimmed}/api/v1`;
+}
+
 function getBaseUrl(): string {
   const prefs = getPreferenceValues<CraftPreferences>();
-  return `https://connect.craft.do/links/${prefs.tasksSecretLinkId}/api/v1`;
+  return resolveBaseUrl(prefs.tasksSecretLinkId);
 }
 
 // ─── Core request helper ──────────────────────────────────────────────────────
@@ -43,6 +68,16 @@ async function request<T>(
 
   if (!response.ok) {
     const body = await response.text();
+    if (response.status === 401 || response.status === 403) {
+      throw new Error(
+        "Invalid API key. Open Preferences and paste only the Secret Link ID (the alphanumeric string from your Craft API URL, not the full URL)."
+      );
+    }
+    if (response.status === 404 && body.includes("DOCTYPE")) {
+      throw new Error(
+        "API endpoint not found (404). Check that your Daily Notes & Tasks Secret Link ID is correct — paste only the ID, not the full URL."
+      );
+    }
     throw new Error(`Craft Tasks API ${response.status}: ${body || response.statusText}`);
   }
 
