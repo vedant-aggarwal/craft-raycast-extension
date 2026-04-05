@@ -1,0 +1,114 @@
+{
+  "$schema": "https://www.raycast.com/schemas/extension.json",
+  "name": "craft-docs",
+  "title": "Craft Docs",
+  "description": "Manage Craft Docs from Raycast — quick notes, daily notes, tasks, search, and more.",
+  "icon": "extension-icon.png",
+  "author": "your-raycast-username",
+  "license": "MIT",
+  "platforms": ["macOS", "Windows"],
+  "categories": ["Productivity"],
+  "commands": [
+    {
+      "name": "quick-note",
+      "title": "Quick Note",
+      "description": "Create an instant note in Craft",
+      "mode": "view",
+      "keywords": ["note", "create", "craft"],
+      "preferences": [
+        {
+          "name": "defaultFolderId",
+          "title": "Default Folder ID",
+          "description": "Folder ID to save quick notes in (leave empty for Unsorted). Find it via Search Documents.",
+          "type": "textfield",
+          "required": false,
+          "default": ""
+        }
+      ]
+    },
+    {
+      "name": "daily-note",
+      "title": "Append to Daily Note",
+      "description": "Add a bullet or block to today's Craft daily note",
+      "mode": "view",
+      "keywords": ["daily", "note", "append", "today"]
+    },
+    {
+      "name": "open-daily-note",
+      "title": "Open Daily Note",
+      "description": "View today's or a previous day's daily note in Raycast",
+      "mode": "view",
+      "keywords": ["daily", "open", "view", "today", "yesterday"]
+    },
+    {
+      "name": "view-tasks",
+      "title": "View Tasks",
+      "description": "Browse, filter, complete, or delete Craft tasks",
+      "mode": "view",
+      "keywords": ["tasks", "todo", "inbox", "active"]
+    },
+    {
+      "name": "create-task",
+      "title": "Create Task",
+      "description": "Create a new task in Craft",
+      "mode": "view",
+      "keywords": ["task", "create", "todo", "new"]
+    },
+    {
+      "name": "search-documents",
+      "title": "Search Documents",
+      "description": "Search across all Craft documents with folder and date filters",
+      "mode": "view",
+      "keywords": ["search", "find", "documents", "craft"]
+    },
+    {
+      "name": "add-to-list",
+      "title": "Add to List",
+      "description": "Append content to a pinned Craft document (grocery list, ideas, etc.)",
+      "mode": "view",
+      "keywords": ["list", "append", "add", "grocery", "ideas"]
+    },
+    {
+      "name": "scratchpad",
+      "title": "Craft Scratchpad",
+      "description": "A persistent scratchpad that saves to Craft Docs",
+      "mode": "view",
+      "keywords": ["scratchpad", "scratch", "note", "draft"]
+    }
+  ],
+  "preferences": [
+    {
+      "name": "docsSecretLinkId",
+      "title": "Documents API Secret Link ID",
+      "description": "Secret link ID from Craft Settings → API → All Documents. Format: a long alphanumeric string.",
+      "type": "password",
+      "required": true
+    },
+    {
+      "name": "tasksSecretLinkId",
+      "title": "Daily Notes & Tasks API Secret Link ID",
+      "description": "Secret link ID from Craft Settings → API → Daily Notes and Tasks.",
+      "type": "password",
+      "required": true
+    }
+  ],
+  "dependencies": {
+    "@raycast/api": "^1.94.0",
+    "@raycast/utils": "^1.17.0"
+  },
+  "devDependencies": {
+    "@raycast/eslint-config": "^1.0.11",
+    "@types/node": "^22.0.0",
+    "@types/react": "^18.3.3",
+    "eslint": "^8.57.0",
+    "prettier": "^3.3.3",
+    "typescript": "^5.4.5"
+  },
+  "scripts": {
+    "build": "ray build",
+    "dev": "ray develop",
+    "fix-lint": "ray lint --fix",
+    "lint": "ray lint",
+    "publish": "npx @raycast/api@latest publish"
+  }
+}
