@@ -145,20 +145,27 @@ export interface CreateDocumentParams {
 }
 
 export async function createDocument(params: CreateDocumentParams): Promise<CraftDocument> {
-  const body: Record<string, unknown> = { title: params.title };
-  if (params.destination) body.destination = params.destination;
+  const doc: Record<string, unknown> = { title: params.title };
+  if (params.destination) doc.destination = params.destination;
 
-  const result = await request<{ document: CraftDocument }>("/documents", {
-    method: "POST",
-    body: JSON.stringify(body),
-  });
-  return result.document;
+  // API expects: { documents: [ { title, destination? } ] }
+  // API returns: { documents: [ { id, title, ... } ] }
+  const result = await request<{ documents?: CraftDocument[]; document?: CraftDocument }>(
+    "/documents",
+    {
+      method: "POST",
+      body: JSON.stringify({ documents: [doc] }),
+    }
+  );
+  // Handle both array and single-object response shapes
+  return result.documents?.[0] ?? result.document!;
 }
 
 export async function deleteDocument(documentId: string): Promise<void> {
+  // API expects: { documents: [ { id } ] }
   await request("/documents", {
     method: "DELETE",
-    body: JSON.stringify({ documentIds: [documentId] }),
+    body: JSON.stringify({ documents: [{ id: documentId }] }),
   });
 }
 
@@ -220,9 +227,10 @@ export async function insertBlocks(params: InsertBlocksParams): Promise<CraftBlo
 }
 
 export async function deleteBlocks(blockIds: string[]): Promise<void> {
+  // API expects: { blocks: [ { id } ] }
   await request("/blocks", {
     method: "DELETE",
-    body: JSON.stringify({ blockIds }),
+    body: JSON.stringify({ blocks: blockIds.map((id) => ({ id })) }),
   });
 }
 

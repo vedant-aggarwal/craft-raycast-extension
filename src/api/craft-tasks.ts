@@ -114,15 +114,16 @@ export interface CreateTaskParams {
 }
 
 export async function createTask(params: CreateTaskParams): Promise<CraftTask> {
-  const body: Record<string, unknown> = { title: params.title };
-  if (params.scheduleDate) body.scheduleDate = params.scheduleDate;
-  if (params.dueDate) body.dueDate = params.dueDate;
+  const task: Record<string, unknown> = { title: params.title };
+  if (params.scheduleDate) task.scheduleDate = params.scheduleDate;
+  if (params.dueDate) task.dueDate = params.dueDate;
 
-  const result = await request<{ task: CraftTask }>("/tasks", {
+  // API expects: { tasks: [ { title, scheduleDate?, dueDate? } ] }
+  const result = await request<{ tasks?: CraftTask[]; task?: CraftTask }>("/tasks", {
     method: "POST",
-    body: JSON.stringify(body),
+    body: JSON.stringify({ tasks: [task] }),
   });
-  return result.task;
+  return result.tasks?.[0] ?? result.task!;
 }
 
 export interface UpdateTaskParams {
@@ -134,15 +135,19 @@ export interface UpdateTaskParams {
 }
 
 export async function updateTasks(params: UpdateTaskParams): Promise<CraftTask[]> {
-  const body: Record<string, unknown> = { taskIds: params.taskIds };
-  if (params.state !== undefined) body.state = params.state;
-  if (params.title !== undefined) body.title = params.title;
-  if (params.scheduleDate !== undefined) body.scheduleDate = params.scheduleDate;
-  if (params.dueDate !== undefined) body.dueDate = params.dueDate;
+  // Build per-task update objects matching the shape the API accepts
+  const tasks = params.taskIds.map((id) => {
+    const t: Record<string, unknown> = { id };
+    if (params.state !== undefined) t.state = params.state;
+    if (params.title !== undefined) t.title = params.title;
+    if (params.scheduleDate !== undefined) t.scheduleDate = params.scheduleDate;
+    if (params.dueDate !== undefined) t.dueDate = params.dueDate;
+    return t;
+  });
 
   const result = await request<{ tasks: CraftTask[] }>("/tasks", {
     method: "PUT",
-    body: JSON.stringify(body),
+    body: JSON.stringify({ tasks }),
   });
   return result.tasks ?? [];
 }
@@ -150,7 +155,7 @@ export async function updateTasks(params: UpdateTaskParams): Promise<CraftTask[]
 export async function deleteTasks(taskIds: string[]): Promise<void> {
   await request("/tasks", {
     method: "DELETE",
-    body: JSON.stringify({ taskIds }),
+    body: JSON.stringify({ tasks: taskIds.map((id) => ({ id })) }),
   });
 }
 
