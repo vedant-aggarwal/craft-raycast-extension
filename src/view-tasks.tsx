@@ -11,7 +11,7 @@ import {
   Alert,
 } from "@raycast/api";
 import { useEffect, useState, useCallback } from "react";
-import { getTasks, updateTasks, deleteTasks } from "./api/craft-tasks";
+import { getTasks, updateTask, deleteTasks, stripTaskPrefix } from "./api/craft-tasks";
 import type { CraftTask, TaskScope } from "./api/types";
 
 const SCOPES: { value: TaskScope; label: string }[] = [
@@ -21,13 +21,14 @@ const SCOPES: { value: TaskScope; label: string }[] = [
   { value: "logbook", label: "Logbook" },
 ];
 
-function taskStateIcon(task: CraftTask): { source: Icon; tintColor: Color } {
-  if (task.state === "done") return { source: Icon.CheckCircle, tintColor: Color.Green };
-  if (task.state === "canceled") return { source: Icon.XMarkCircle, tintColor: Color.SecondaryText };
+function taskIcon(task: CraftTask): { source: Icon; tintColor: Color } {
+  const state = task.taskInfo?.state;
+  if (state === "done") return { source: Icon.CheckCircle, tintColor: Color.Green };
+  if (state === "canceled") return { source: Icon.XMarkCircle, tintColor: Color.SecondaryText };
   return { source: Icon.Circle, tintColor: Color.PrimaryText };
 }
 
-function formatDueDate(dateStr?: string): string | undefined {
+function formatDeadline(dateStr?: string): string | undefined {
   if (!dateStr) return undefined;
   const d = new Date(dateStr);
   const today = new Date();
@@ -48,7 +49,7 @@ export default function ViewTasks() {
   const loadTasks = useCallback(async (s: TaskScope) => {
     setIsLoading(true);
     try {
-      const data = await getTasks({ scope: s });
+      const data = await getTasks(s);
       setTasks(data);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -66,8 +67,12 @@ export default function ViewTasks() {
   async function handleMarkDone(task: CraftTask) {
     const toast = await showToast({ style: Toast.Style.Animated, title: "Marking as done…" });
     try {
-      await updateTasks({ taskIds: [task.id], state: "done" });
-      setTasks((prev) => prev.map((t) => (t.id === task.id ? { ...t, state: "done" } : t)));
+      await updateTask({ id: task.id, state: "done" });
+      setTasks((prev) =>
+        prev.map((t) =>
+          t.id === task.id ? { ...t, taskInfo: { ...t.taskInfo, state: "done" } } : t
+        )
+      );
       toast.style = Toast.Style.Success;
       toast.title = "Task completed";
     } catch (err) {
@@ -80,8 +85,12 @@ export default function ViewTasks() {
   async function handleMarkOpen(task: CraftTask) {
     const toast = await showToast({ style: Toast.Style.Animated, title: "Reopening task…" });
     try {
-      await updateTasks({ taskIds: [task.id], state: "open" });
-      setTasks((prev) => prev.map((t) => (t.id === task.id ? { ...t, state: "open" } : t)));
+      await updateTask({ id: task.id, state: "todo" });
+      setTasks((prev) =>
+        prev.map((t) =>
+          t.id === task.id ? { ...t, taskInfo: { ...t.taskInfo, state: "todo" } } : t
+        )
+      );
       toast.style = Toast.Style.Success;
       toast.title = "Task reopened";
     } catch (err) {
@@ -92,9 +101,10 @@ export default function ViewTasks() {
   }
 
   async function handleDelete(task: CraftTask) {
+    const title = stripTaskPrefix(task.markdown);
     const confirmed = await confirmAlert({
       title: "Delete Task?",
-      message: `"${task.title}" will be permanently deleted.`,
+      message: `"${title}" will be permanently deleted.`,
       primaryAction: { title: "Delete", style: Alert.ActionStyle.Destructive },
     });
     if (!confirmed) return;
@@ -137,28 +147,33 @@ export default function ViewTasks() {
         />
       )}
       {tasks.map((task) => {
-        const dueLabel = formatDueDate(task.dueDate);
+        const title = stripTaskPrefix(task.markdown);
+        const deadline = task.taskInfo?.deadlineDate;
+        const deadlineLabel = formatDeadline(deadline);
+        const scheduleDate = task.taskInfo?.scheduleDate;
+        const state = task.taskInfo?.state;
+
         const accessories: List.Item.Accessory[] = [];
-        if (dueLabel) {
-          const overdue = dueLabel.includes("overdue");
+        if (deadlineLabel) {
+          const overdue = deadlineLabel.includes("overdue");
           accessories.push({
-            tag: { value: dueLabel, color: overdue ? Color.Red : Color.SecondaryText },
+            tag: { value: deadlineLabel, color: overdue ? Color.Red : Color.Orange },
           });
         }
-        if (task.state === "done") {
+        if (state === "done") {
           accessories.push({ tag: { value: "Done", color: Color.Green } });
         }
 
         return (
           <List.Item
             key={task.id}
-            icon={taskStateIcon(task)}
-            title={task.title}
-            subtitle={task.scheduleDate ? `Scheduled: ${task.scheduleDate}` : undefined}
+            icon={taskIcon(task)}
+            title={title || task.markdown}
+            subtitle={scheduleDate ? `Scheduled: ${scheduleDate}` : undefined}
             accessories={accessories}
             actions={
               <ActionPanel>
-                {task.state !== "done" ? (
+                {state !== "done" ? (
                   <Action
                     title="Mark as Done"
                     icon={Icon.CheckCircle}

@@ -1,12 +1,3 @@
-/**
- * Craft Scratchpad
- *
- * A floating-style quick-capture screen backed by Craft Docs.
- * - enableDrafts: content persists between opens until you submit or discard
- * - On submit: creates a new document in Craft (titled with timestamp)
- * - Keyboard-first: open → type → ⌘Enter to save
- */
-
 import {
   Action,
   ActionPanel,
@@ -17,7 +8,7 @@ import {
   popToRoot,
 } from "@raycast/api";
 import { useState } from "react";
-import { createDocument, insertBlocks, getConnectionInfo, buildDocumentDeepLink } from "./api/craft-docs";
+import { createDocument, insertBlocks } from "./api/craft-docs";
 
 interface FormValues {
   title: string;
@@ -49,30 +40,23 @@ export default function Scratchpad() {
     const toast = await showToast({ style: Toast.Style.Animated, title: "Saving to Craft…" });
 
     try {
-      // Create the document
-      const doc = await createDocument({ title, destination: { type: "unsorted" } });
+      const doc = await createDocument({ title });
 
-      // Insert the content as a text block if provided
       if (content && doc.id) {
         await insertBlocks({
-          blocks: [{ type: "text", content }],
-          position: { pageId: doc.id, placement: "end" },
+          blocks: [{ type: "text", markdown: content }],
+          position: { pageId: doc.id, position: "end" },
         });
       }
-
-      const info = await getConnectionInfo().catch(() => null);
 
       toast.style = Toast.Style.Success;
       toast.title = "Saved to Craft";
       toast.message = title;
 
-      if (info?.spaceId && doc.id) {
+      if (doc.clickableLink) {
         toast.primaryAction = {
           title: "Open in Craft",
-          onAction: () => {
-            const url = buildDocumentDeepLink(info.spaceId, doc.id);
-            open(url);
-          },
+          onAction: () => open(doc.clickableLink!),
         };
       }
 
@@ -82,12 +66,8 @@ export default function Scratchpad() {
       toast.style = Toast.Style.Failure;
       toast.title = "Failed to save";
       toast.message = message;
-
-      if (message.includes("401") || message.includes("403")) {
-        toast.primaryAction = {
-          title: "Open Preferences",
-          onAction: openExtensionPreferences,
-        };
+      if (message.includes("Invalid API key")) {
+        toast.primaryAction = { title: "Open Preferences", onAction: openExtensionPreferences };
       }
     } finally {
       setIsSubmitting(false);

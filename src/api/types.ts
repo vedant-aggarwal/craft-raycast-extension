@@ -1,4 +1,4 @@
-// ─── Shared API types ─────────────────────────────────────────────────────────
+// ─── Shared API types (aligned with actual Craft API responses) ───────────────
 
 export interface CraftPreferences {
   docsSecretLinkId: string;
@@ -21,103 +21,108 @@ export type BlockType =
   | "line"
   | "collectionItem";
 
-export type TaskState = "open" | "done" | "canceled";
-export type TaskScope = "active" | "upcoming" | "inbox" | "logbook";
-export type BlockPlacement = "start" | "end" | "before" | "after";
+export type TextStyle = "h1" | "h2" | "h3" | "h4" | "body" | "caption" | "card" | "page";
+export type ListStyle = "none" | "bullet" | "numbered" | "task";
 
-export interface BlockListStyle {
-  type: "none" | "bullet" | "numbered" | "todo" | "toggle";
-  state?: "checked" | "unchecked";
-}
-
+/** Block as returned by the API */
 export interface CraftBlock {
   id: string;
   type: BlockType;
-  content?: string;
-  listStyle?: BlockListStyle;
-  children?: CraftBlock[];
-  createdAt?: string;
-  modifiedAt?: string;
-  authorIds?: string[];
+  markdown?: string;
+  textStyle?: TextStyle;
+  listStyle?: ListStyle | string;
+  content?: CraftBlock[]; // child blocks
+  metadata?: {
+    lastModifiedAt?: string;
+    createdAt?: string;
+    lastModifiedBy?: string;
+    createdBy?: string;
+    comments?: unknown[];
+  };
 }
 
-// Used when inserting new blocks (id is not required yet)
+/** Block when inserting (no id yet) */
 export interface NewBlock {
   type: BlockType;
-  content?: string;
-  listStyle?: BlockListStyle;
-  children?: NewBlock[];
+  markdown?: string;
+  textStyle?: TextStyle;
+  listStyle?: ListStyle | string;
 }
 
 // ─── Position for block insertion ────────────────────────────────────────────
 
 export interface DocsBlockPosition {
-  pageId: string; // root block ID of the target document
-  placement: BlockPlacement;
-  siblingId?: string;
+  pageId: string;
+  position: "start" | "end";
 }
 
 export interface DailyNoteBlockPosition {
   date: "today" | "yesterday" | "tomorrow" | string; // YYYY-MM-DD
-  placement: BlockPlacement;
-  siblingId?: string;
+  position: "start" | "end";
 }
 
 // ─── Documents ────────────────────────────────────────────────────────────────
 
-export interface CraftDocumentMeta {
-  createdAt?: string;
-  modifiedAt?: string;
-  authorIds?: string[];
-  version?: number;
-}
-
 export interface CraftDocument {
   id: string;
   title?: string;
-  meta?: CraftDocumentMeta;
+  location?: string;
+  lastModifiedAt?: string;
+  createdAt?: string;
+  clickableLink?: string;
+}
+
+/** Returned by GET /documents/search */
+export interface CraftDocumentSearchResult {
+  documentId: string;
+  title?: string;
+  snippet?: string;
+  matchCount?: number;
+  metadata?: {
+    lastModifiedAt?: string;
+    createdAt?: string;
+  };
 }
 
 // ─── Folders ─────────────────────────────────────────────────────────────────
 
 export interface CraftFolder {
   id: string;
-  title: string;
-  parentId?: string;
+  name: string; // API uses "name", not "title"
+  parentFolderId?: string;
   documentCount?: number;
-  subfolderCount?: number;
+  folders?: CraftFolder[]; // nested subfolders (API field name is "folders")
 }
 
 // ─── Tasks ───────────────────────────────────────────────────────────────────
 
+export type TaskState = "todo" | "done" | "canceled";
+export type TaskScope = "active" | "upcoming" | "inbox" | "logbook";
+
+export interface TaskInfo {
+  state: TaskState;
+  scheduleDate?: string;   // YYYY-MM-DD
+  deadlineDate?: string;   // YYYY-MM-DD (NOT "dueDate")
+  completedAt?: string;
+  canceledAt?: string;
+}
+
+/** Task as returned by the Daily Notes & Tasks API */
 export interface CraftTask {
   id: string;
-  title: string;
-  state: TaskState;
-  scheduleDate?: string; // YYYY-MM-DD
-  dueDate?: string; // YYYY-MM-DD
-  location?: string;
+  markdown: string; // the task text
+  listStyle?: string;
+  taskInfo: TaskInfo;
 }
 
 // ─── Daily Notes ─────────────────────────────────────────────────────────────
 
-export interface DailyNoteSearchResult {
-  date: string; // YYYY-MM-DD
-  blocks: CraftBlock[];
-  meta?: CraftDocumentMeta;
-}
-
-// ─── Collections ─────────────────────────────────────────────────────────────
-
-export interface CraftCollection {
+/** Root block returned by GET /blocks?date=... */
+export interface DailyNoteBlock {
+  type: "page";
   id: string;
-  title?: string;
-  documentId: string;
-}
-
-export interface CollectionItem {
-  id: string;
-  properties?: Record<string, unknown>;
+  title?: { value: string; attributes?: unknown[] };
+  markdown?: string;
   content?: CraftBlock[];
 }
 
@@ -126,16 +131,5 @@ export interface CollectionItem {
 export interface ConnectionInfo {
   spaceId: string;
   timezone?: string;
-  urlTemplates?: {
-    document?: string;
-    block?: string;
-    dailyNote?: string;
-  };
-}
-
-// ─── API response wrappers ────────────────────────────────────────────────────
-
-export interface ApiError {
-  status: number;
-  message: string;
+  urlTemplates?: Record<string, string>;
 }

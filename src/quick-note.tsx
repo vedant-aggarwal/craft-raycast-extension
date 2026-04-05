@@ -6,10 +6,9 @@ import {
   showToast,
   Toast,
   openExtensionPreferences,
-  useNavigation,
 } from "@raycast/api";
 import { useEffect, useState } from "react";
-import { createDocument, listFolders, buildDocumentDeepLink, getConnectionInfo } from "./api/craft-docs";
+import { createDocument, listFolders, insertBlocks } from "./api/craft-docs";
 import type { CraftFolder } from "./api/types";
 
 interface CommandPreferences {
@@ -36,7 +35,8 @@ export default function QuickNote() {
   }, []);
 
   async function handleSubmit(values: FormValues) {
-    if (!values.title.trim()) {
+    const title = values.title.trim();
+    if (!title) {
       showToast({ style: Toast.Style.Failure, title: "Title is required" });
       return;
     }
@@ -45,32 +45,28 @@ export default function QuickNote() {
     const toast = await showToast({ style: Toast.Style.Animated, title: "Creating note…" });
 
     try {
-      const destination =
-        values.folderId
-          ? { type: "folder" as const, folderId: values.folderId }
-          : { type: "unsorted" as const };
+      const doc = await createDocument({
+        title,
+        folderId: values.folderId || undefined,
+      });
 
-      const doc = await createDocument({ title: values.title.trim(), destination });
-
-      // If content was provided, open the document in Craft via deep link so the
-      // user can paste / view — full block insertion is available but the title
-      // alone already creates a usable document.
-      // (Block insertion after creation is handled by insertBlocks in craft-docs.ts
-      //  if you need to pre-fill body content programmatically.)
-
-      const info = await getConnectionInfo().catch(() => null);
+      // If content was provided, insert it as a block
+      if (values.content.trim() && doc.id) {
+        await insertBlocks({
+          blocks: [{ type: "text", markdown: values.content.trim() }],
+          position: { pageId: doc.id, position: "end" },
+        });
+      }
 
       toast.style = Toast.Style.Success;
       toast.title = "Note created";
-      toast.message = values.title.trim();
+      toast.message = title;
 
-      if (info?.spaceId && doc.id) {
+      // Use the clickableLink returned by the API directly
+      if (doc.clickableLink) {
         toast.primaryAction = {
           title: "Open in Craft",
-          onAction: () => {
-            const url = buildDocumentDeepLink(info.spaceId, doc.id);
-            open(url);
-          },
+          onAction: () => open(doc.clickableLink!),
         };
       }
     } catch (err) {
@@ -78,12 +74,8 @@ export default function QuickNote() {
       toast.style = Toast.Style.Failure;
       toast.title = "Failed to create note";
       toast.message = message;
-
-      if (message.includes("401") || message.includes("403")) {
-        toast.primaryAction = {
-          title: "Open Preferences",
-          onAction: openExtensionPreferences,
-        };
+      if (message.includes("Invalid API key")) {
+        toast.primaryAction = { title: "Open Preferences", onAction: openExtensionPreferences };
       }
     } finally {
       setIsSubmitting(false);
@@ -110,7 +102,7 @@ export default function QuickNote() {
       <Form.TextArea
         id="content"
         title="Content"
-        placeholder="Write in markdown — this will be the first block…"
+        placeholder="Optional — write in markdown…"
         enableMarkdown
       />
       <Form.Separator />
@@ -122,7 +114,7 @@ export default function QuickNote() {
       >
         <Form.Dropdown.Item value="" title="Unsorted" />
         {folders.map((f) => (
-          <Form.Dropdown.Item key={f.id} value={f.id} title={f.title} />
+          <Form.Dropdown.Item key={f.id} value={f.id} title={f.name} />
         ))}
       </Form.Dropdown>
     </Form>

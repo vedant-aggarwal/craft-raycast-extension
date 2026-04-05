@@ -13,7 +13,7 @@ import type { NewBlock } from "./api/types";
 interface FormValues {
   content: string;
   placement: "end" | "start";
-  blockStyle: "text" | "bullet" | "numbered" | "todo";
+  blockStyle: "text" | "bullet" | "numbered" | "task";
 }
 
 export default function DailyNote() {
@@ -30,17 +30,10 @@ export default function DailyNote() {
     const toast = await showToast({ style: Toast.Style.Animated, title: "Appending to daily note…" });
 
     try {
-      const listStyleMap: Record<string, NewBlock["listStyle"]> = {
-        text: undefined,
-        bullet: { type: "bullet" },
-        numbered: { type: "numbered" },
-        todo: { type: "todo", state: "unchecked" },
-      };
-
       const block: NewBlock = {
         type: "text",
-        content: text,
-        listStyle: listStyleMap[values.blockStyle],
+        markdown: text,
+        listStyle: values.blockStyle === "text" ? "none" : values.blockStyle,
       };
 
       await appendToDailyNote({
@@ -58,11 +51,8 @@ export default function DailyNote() {
       toast.title = "Failed to append";
       toast.message = message;
 
-      if (message.includes("401") || message.includes("403")) {
-        toast.primaryAction = {
-          title: "Open Preferences",
-          onAction: openExtensionPreferences,
-        };
+      if (message.includes("Invalid API key")) {
+        toast.primaryAction = { title: "Open Preferences", onAction: openExtensionPreferences };
       }
     } finally {
       setIsSubmitting(false);
@@ -92,7 +82,7 @@ export default function DailyNote() {
         <Form.Dropdown.Item value="text" title="Plain Text" />
         <Form.Dropdown.Item value="bullet" title="• Bullet" />
         <Form.Dropdown.Item value="numbered" title="1. Numbered" />
-        <Form.Dropdown.Item value="todo" title="☐ To-Do" />
+        <Form.Dropdown.Item value="task" title="☐ Task" />
       </Form.Dropdown>
       <Form.Dropdown id="placement" title="Insert At" defaultValue="end">
         <Form.Dropdown.Item value="end" title="Bottom of note" />

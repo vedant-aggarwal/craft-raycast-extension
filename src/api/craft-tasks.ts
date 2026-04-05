@@ -1,7 +1,6 @@
 /**
- * Craft Daily Notes & Tasks API client
- * Base URL: https://connect.craft.do/links/{secretLinkId}/api/v1
- * This uses the SEPARATE "Daily Notes and Tasks" secret link ID.
+ * Craft Daily Notes & Tasks API client — verified against live API 2026-04-06
+ * Uses the SEPARATE "Daily Notes and Tasks" secret link ID.
  */
 
 import { getPreferenceValues } from "@raycast/api";
@@ -10,37 +9,21 @@ import type {
   CraftBlock,
   CraftTask,
   NewBlock,
-  DailyNoteBlockPosition,
   ConnectionInfo,
-  DailyNoteSearchResult,
   TaskScope,
   TaskState,
 } from "./types";
 
 // ─── Base URL ─────────────────────────────────────────────────────────────────
 
-/**
- * Accepts either:
- *   - A full API URL like "https://connect.craft.do/links/ABC123/api/v1"
- *   - A full connection URL like "https://connect.craft.do/links/ABC123"
- *   - Just the secret link ID like "ABC123"
- *
- * Returns the clean base URL ending with /api/v1.
- */
 function resolveBaseUrl(raw: string): string {
   const trimmed = raw.trim();
-
   if (trimmed.startsWith("http")) {
-    if (/\/api\/v1\/?$/.test(trimmed)) {
-      return trimmed.replace(/\/$/, "");
-    }
+    if (/\/api\/v1\/?$/.test(trimmed)) return trimmed.replace(/\/$/, "");
     const idMatch = trimmed.match(/\/links\/([^/?#]+)/);
-    if (idMatch) {
-      return `https://connect.craft.do/links/${idMatch[1]}/api/v1`;
-    }
+    if (idMatch) return `https://connect.craft.do/links/${idMatch[1]}/api/v1`;
     return `${trimmed.replace(/\/$/, "")}/api/v1`;
   }
-
   return `https://connect.craft.do/links/${trimmed}/api/v1`;
 }
 
@@ -51,135 +34,146 @@ function getBaseUrl(): string {
 
 // ─── Core request helper ──────────────────────────────────────────────────────
 
-async function request<T>(
-  path: string,
-  options: RequestInit = {},
-  accept: "json" | "markdown" = "json"
-): Promise<T> {
+async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const url = `${getBaseUrl()}${path}`;
   const response = await fetch(url, {
     headers: {
       "Content-Type": "application/json",
-      Accept: accept === "markdown" ? "text/markdown" : "application/json",
+      Accept: "application/json",
       ...options.headers,
     },
     ...options,
   });
 
+  const text = await response.text();
+
   if (!response.ok) {
-    const body = await response.text();
     if (response.status === 401 || response.status === 403) {
       throw new Error(
-        "Invalid API key. Open Preferences and paste only the Secret Link ID (the alphanumeric string from your Craft API URL, not the full URL)."
+        "Invalid API key. Open Preferences and paste your Daily Notes & Tasks Secret Link ID."
       );
     }
-    if (response.status === 404 && body.includes("DOCTYPE")) {
-      throw new Error(
-        "API endpoint not found (404). Check that your Daily Notes & Tasks Secret Link ID is correct — paste only the ID, not the full URL."
-      );
-    }
-    throw new Error(`Craft Tasks API ${response.status}: ${body || response.statusText}`);
+    let msg = text;
+    try {
+      const json = JSON.parse(text);
+      msg = json.error ?? json.message ?? text;
+    } catch {}
+    throw new Error(`Craft Tasks API ${response.status}: ${msg}`);
   }
 
-  if (accept === "markdown") {
-    return (await response.text()) as unknown as T;
-  }
-
-  const text = await response.text();
   if (!text) return {} as T;
   return JSON.parse(text) as T;
+}
+
+async function requestMarkdown(path: string): Promise<string> {
+  const url = `${getBaseUrl()}${path}`;
+  const response = await fetch(url, {
+    headers: { Accept: "text/markdown" },
+  });
+
+  const text = await response.text();
+
+  if (!response.ok) {
+    let msg = text;
+    try {
+      const json = JSON.parse(text);
+      msg = json.error ?? json.message ?? text;
+    } catch {}
+    throw new Error(`Craft Tasks API ${response.status}: ${msg}`);
+  }
+
+  return text;
 }
 
 // ─── Connection ───────────────────────────────────────────────────────────────
 
 export async function getConnectionInfo(): Promise<ConnectionInfo> {
-  return request<ConnectionInfo>("/connection");
+  const result = await request<{ space: { id: string; timezone: string } }>(
+    "/connection"
+  );
+  return { spaceId: result.space.id, timezone: result.space.timezone };
 }
 
 // ─── Tasks ────────────────────────────────────────────────────────────────────
 
-export interface GetTasksParams {
-  scope: TaskScope;
-}
-
-export async function getTasks(params: GetTasksParams): Promise<CraftTask[]> {
-  const result = await request<{ tasks: CraftTask[] }>(`/tasks?scope=${params.scope}`);
-  return result.tasks ?? [];
+export async function getTasks(scope: TaskScope): Promise<CraftTask[]> {
+  const result = await request<{ items: CraftTask[] }>(`/tasks?scope=${scope}`);
+  return result.items ?? [];
 }
 
 export interface CreateTaskParams {
-  title: string;
-  scheduleDate?: string; // YYYY-MM-DD or "today"
-  dueDate?: string; // YYYY-MM-DD
+  markdown: string;       // task text (without - [ ] prefix)
+  scheduleDate?: string;  // YYYY-MM-DD
+  deadlineDate?: string;  // YYYY-MM-DD  (NOT "dueDate")
+  location?: "inbox" | "dailyNote";
+  date?: string;          // YYYY-MM-DD or "today" — used when location is dailyNote
 }
 
 export async function createTask(params: CreateTaskParams): Promise<CraftTask> {
-  const task: Record<string, unknown> = { title: params.title };
-  if (params.scheduleDate) task.scheduleDate = params.scheduleDate;
-  if (params.dueDate) task.dueDate = params.dueDate;
+  const location =
+    params.location === "dailyNote"
+      ? { type: "dailyNote", date: params.date ?? "today" }
+      : { type: "inbox" };
 
-  // API expects: { tasks: [ { title, scheduleDate?, dueDate? } ] }
-  const result = await request<{ tasks?: CraftTask[]; task?: CraftTask }>("/tasks", {
+  const taskObj: Record<string, unknown> = {
+    markdown: params.markdown,
+    location,
+    taskInfo: {
+      state: "todo",
+      ...(params.scheduleDate && { scheduleDate: params.scheduleDate }),
+      ...(params.deadlineDate && { deadlineDate: params.deadlineDate }),
+    },
+  };
+
+  const result = await request<{ items: CraftTask[] }>("/tasks", {
     method: "POST",
-    body: JSON.stringify({ tasks: [task] }),
+    body: JSON.stringify({ tasks: [taskObj] }),
   });
-  return result.tasks?.[0] ?? result.task!;
+
+  const task = result.items?.[0];
+  if (!task) throw new Error("Craft API returned no task after creation");
+  return task;
 }
 
 export interface UpdateTaskParams {
-  taskIds: string[];
+  id: string;
   state?: TaskState;
-  title?: string;
+  markdown?: string;
   scheduleDate?: string;
-  dueDate?: string;
+  deadlineDate?: string;
 }
 
-export async function updateTasks(params: UpdateTaskParams): Promise<CraftTask[]> {
-  // Build per-task update objects matching the shape the API accepts
-  const tasks = params.taskIds.map((id) => {
-    const t: Record<string, unknown> = { id };
-    if (params.state !== undefined) t.state = params.state;
-    if (params.title !== undefined) t.title = params.title;
-    if (params.scheduleDate !== undefined) t.scheduleDate = params.scheduleDate;
-    if (params.dueDate !== undefined) t.dueDate = params.dueDate;
-    return t;
+export async function updateTask(params: UpdateTaskParams): Promise<CraftTask> {
+  const update: Record<string, unknown> = { id: params.id };
+  if (params.markdown !== undefined) update.markdown = params.markdown;
+
+  const taskInfo: Record<string, unknown> = {};
+  if (params.state !== undefined) taskInfo.state = params.state;
+  if (params.scheduleDate !== undefined) taskInfo.scheduleDate = params.scheduleDate;
+  if (params.deadlineDate !== undefined) taskInfo.deadlineDate = params.deadlineDate;
+  if (Object.keys(taskInfo).length) update.taskInfo = taskInfo;
+
+  const result = await request<{ items: CraftTask[] }>("/tasks", {
+    method: "PUT",
+    body: JSON.stringify({ tasksToUpdate: [update] }),
   });
 
-  const result = await request<{ tasks: CraftTask[] }>("/tasks", {
-    method: "PUT",
-    body: JSON.stringify({ tasks }),
-  });
-  return result.tasks ?? [];
+  return result.items?.[0] ?? ({ id: params.id } as CraftTask);
 }
 
 export async function deleteTasks(taskIds: string[]): Promise<void> {
   await request("/tasks", {
     method: "DELETE",
-    body: JSON.stringify({ tasks: taskIds.map((id) => ({ id })) }),
+    body: JSON.stringify({ idsToDelete: taskIds }),
   });
 }
 
 // ─── Daily Note Blocks ────────────────────────────────────────────────────────
 
-export type DailyNoteDate = "today" | "yesterday" | "tomorrow" | string; // YYYY-MM-DD
-
-export interface GetDailyNoteBlocksParams {
-  date: DailyNoteDate;
-  maxDepth?: number;
-  fetchMetadata?: boolean;
-}
-
-export async function getDailyNoteBlocks(params: GetDailyNoteBlocksParams): Promise<CraftBlock[]> {
-  const query = new URLSearchParams({ date: params.date });
-  if (params.maxDepth !== undefined) query.set("maxDepth", String(params.maxDepth));
-  if (params.fetchMetadata) query.set("fetchMetadata", "true");
-  const result = await request<{ blocks: CraftBlock[] }>(`/blocks?${query.toString()}`);
-  return result.blocks ?? [];
-}
+export type DailyNoteDate = "today" | "yesterday" | "tomorrow" | string;
 
 export async function getDailyNoteMarkdown(date: DailyNoteDate): Promise<string> {
-  const query = new URLSearchParams({ date });
-  return request<string>(`/blocks?${query.toString()}`, {}, "markdown");
+  return requestMarkdown(`/blocks?date=${date}`);
 }
 
 export interface AppendToDailyNoteParams {
@@ -189,61 +183,25 @@ export interface AppendToDailyNoteParams {
 }
 
 export async function appendToDailyNote(params: AppendToDailyNoteParams): Promise<CraftBlock[]> {
-  const position: DailyNoteBlockPosition = {
-    date: params.date ?? "today",
-    placement: params.placement ?? "end",
-  };
-
-  const result = await request<{ blocks: CraftBlock[] }>("/blocks", {
+  const result = await request<{ items: CraftBlock[] }>("/blocks", {
     method: "POST",
     body: JSON.stringify({
       blocks: params.blocks,
-      position,
+      position: {
+        date: params.date ?? "today",
+        position: params.placement ?? "end",
+      },
     }),
   });
-  return result.blocks ?? [];
-}
-
-// ─── Daily Note Search ────────────────────────────────────────────────────────
-
-export interface SearchDailyNotesParams {
-  include?: string;
-  regexps?: string[];
-  startDate?: string; // YYYY-MM-DD
-  endDate?: string; // YYYY-MM-DD
-  fetchMetadata?: boolean;
-}
-
-export async function searchDailyNotes(
-  params: SearchDailyNotesParams
-): Promise<DailyNoteSearchResult[]> {
-  const query = new URLSearchParams();
-  if (params.include) query.set("include", params.include);
-  if (params.startDate) query.set("startDate", params.startDate);
-  if (params.endDate) query.set("endDate", params.endDate);
-  if (params.fetchMetadata) query.set("fetchMetadata", "true");
-  if (params.regexps?.length) {
-    params.regexps.forEach((r) => query.append("regexps", r));
-  }
-
-  const result = await request<{ results: DailyNoteSearchResult[] }>(
-    `/daily-notes/search?${query.toString()}`
-  );
-  return result.results ?? [];
+  return result.items ?? [];
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-/**
- * Formats a date as YYYY-MM-DD for the API.
- */
 export function formatDate(date: Date): string {
   return date.toISOString().split("T")[0];
 }
 
-/**
- * Returns the last N daily note dates (including today).
- */
 export function recentDates(count = 7): string[] {
   const dates: string[] = [];
   const today = new Date();
@@ -255,9 +213,6 @@ export function recentDates(count = 7): string[] {
   return dates;
 }
 
-/**
- * Labels for common date values.
- */
 export function dateLabel(dateStr: string): string {
   const today = formatDate(new Date());
   const yesterday = formatDate(new Date(Date.now() - 86400000));
@@ -266,29 +221,7 @@ export function dateLabel(dateStr: string): string {
   return dateStr;
 }
 
-/**
- * Converts a CraftBlock tree into plain markdown text.
- */
-export function blocksToMarkdown(blocks: CraftBlock[]): string {
-  return blocks.map((b) => blockToMarkdown(b, 0)).join("\n");
-}
-
-function blockToMarkdown(block: CraftBlock, depth: number): string {
-  const indent = "  ".repeat(depth);
-  const listStyle = block.listStyle?.type;
-
-  let line = "";
-  if (listStyle === "bullet") {
-    line = `${indent}- ${block.content ?? ""}`;
-  } else if (listStyle === "numbered") {
-    line = `${indent}1. ${block.content ?? ""}`;
-  } else if (listStyle === "todo") {
-    const checked = block.listStyle?.state === "checked";
-    line = `${indent}- [${checked ? "x" : " "}] ${block.content ?? ""}`;
-  } else {
-    line = `${indent}${block.content ?? ""}`;
-  }
-
-  const childLines = (block.children ?? []).map((c) => blockToMarkdown(c, depth + 1)).join("\n");
-  return childLines ? `${line}\n${childLines}` : line;
+/** Strip markdown task checkbox prefix: "- [ ] foo" → "foo", "- [x] bar" → "bar" */
+export function stripTaskPrefix(markdown: string): string {
+  return markdown.replace(/^-\s*\[[x ]\]\s*/i, "").trim();
 }

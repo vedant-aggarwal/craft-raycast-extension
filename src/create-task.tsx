@@ -8,13 +8,12 @@ import {
   popToRoot,
 } from "@raycast/api";
 import { useState } from "react";
-import { createTask } from "./api/craft-tasks";
-import { formatDate } from "./api/craft-tasks";
+import { createTask, formatDate } from "./api/craft-tasks";
 
 interface FormValues {
   title: string;
   scheduleDate: Date | null;
-  dueDate: Date | null;
+  deadlineDate: Date | null;
 }
 
 export default function CreateTask() {
@@ -32,9 +31,10 @@ export default function CreateTask() {
 
     try {
       await createTask({
-        title,
+        markdown: title,
         scheduleDate: values.scheduleDate ? formatDate(values.scheduleDate) : undefined,
-        dueDate: values.dueDate ? formatDate(values.dueDate) : undefined,
+        deadlineDate: values.deadlineDate ? formatDate(values.deadlineDate) : undefined,
+        location: "inbox",
       });
 
       toast.style = Toast.Style.Success;
@@ -48,11 +48,8 @@ export default function CreateTask() {
       toast.title = "Failed to create task";
       toast.message = message;
 
-      if (message.includes("401") || message.includes("403")) {
-        toast.primaryAction = {
-          title: "Open Preferences",
-          onAction: openExtensionPreferences,
-        };
+      if (message.includes("Invalid API key")) {
+        toast.primaryAction = { title: "Open Preferences", onAction: openExtensionPreferences };
       }
     } finally {
       setIsSubmitting(false);
@@ -82,8 +79,8 @@ export default function CreateTask() {
         type={Form.DatePicker.Type.Date}
       />
       <Form.DatePicker
-        id="dueDate"
-        title="Due Date"
+        id="deadlineDate"
+        title="Deadline"
         type={Form.DatePicker.Type.Date}
       />
     </Form>

@@ -8,30 +8,19 @@ import {
   openExtensionPreferences,
 } from "@raycast/api";
 import { useEffect, useState } from "react";
-import {
-  getDailyNoteMarkdown,
-  recentDates,
-  dateLabel,
-  formatDate,
-} from "./api/craft-tasks";
-import { getConnectionInfo } from "./api/craft-docs";
+import { getDailyNoteMarkdown, recentDates, dateLabel, formatDate } from "./api/craft-tasks";
+import { getConnectionInfo, buildDeepLink } from "./api/craft-docs";
 
-interface DailyNoteEntry {
+interface DailyNoteDetailProps {
   date: string;
   label: string;
 }
 
-function buildCraftDeepLink(spaceId: string, date: string): string {
-  // Craft deep link format for daily notes: craftdocs://dailynote?spaceId=...&date=YYYY-MM-DD
-  return `craftdocs://dailynote?spaceId=${encodeURIComponent(spaceId)}&date=${encodeURIComponent(date)}`;
-}
-
-// ─── Detail view for a single daily note ─────────────────────────────────────
-
-function DailyNoteDetail({ date, label }: { date: string; label: string }) {
+function DailyNoteDetail({ date, label }: DailyNoteDetailProps) {
   const [markdown, setMarkdown] = useState<string | null>(null);
-  const [spaceId, setSpaceId] = useState<string | null>(null);
+  const [craftLink, setCraftLink] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isEmpty, setIsEmpty] = useState(false);
 
   useEffect(() => {
     Promise.all([
@@ -39,16 +28,31 @@ function DailyNoteDetail({ date, label }: { date: string; label: string }) {
       getConnectionInfo().catch(() => null),
     ])
       .then(([md, info]) => {
-        setMarkdown(md || "*This daily note is empty.*");
-        if (info?.spaceId) setSpaceId(info.spaceId);
+        if (!md || !md.trim()) {
+          setIsEmpty(true);
+          setMarkdown("*This daily note is empty.*");
+        } else {
+          setMarkdown(md);
+        }
+        if (info?.spaceId) {
+          // Use date as blockId for daily note deep link (Craft resolves it)
+          setCraftLink(buildDeepLink(info.spaceId, date));
+        }
       })
       .catch((err) => {
         const msg = err instanceof Error ? err.message : String(err);
-        setMarkdown(`> Error loading daily note: ${msg}`);
-        showToast({ style: Toast.Style.Failure, title: "Failed to load", message: msg });
+        if (msg.includes("does not exist") || msg.includes("NOT_FOUND")) {
+          setIsEmpty(true);
+          setMarkdown(
+            `*No daily note found for ${label} (${date}).*\n\nOpen Craft and navigate to this date to create one.`
+          );
+        } else {
+          setMarkdown(`> ⚠️ Error loading note: ${msg}`);
+          showToast({ style: Toast.Style.Failure, title: "Failed to load", message: msg });
+        }
       })
       .finally(() => setIsLoading(false));
-  }, [date]);
+  }, [date, label]);
 
   return (
     <Detail
@@ -57,18 +61,20 @@ function DailyNoteDetail({ date, label }: { date: string; label: string }) {
       navigationTitle={`Daily Note: ${label}`}
       actions={
         <ActionPanel>
-          {spaceId && (
+          {craftLink && !isEmpty && (
             <Action.OpenInBrowser
               title="Open in Craft"
-              url={buildCraftDeepLink(spaceId, date)}
+              url={craftLink}
               shortcut={{ modifiers: ["cmd"], key: "o" }}
             />
           )}
-          <Action.CopyToClipboard
-            title="Copy Markdown"
-            content={markdown ?? ""}
-            shortcut={{ modifiers: ["cmd"], key: "c" }}
-          />
+          {markdown && !isEmpty && (
+            <Action.CopyToClipboard
+              title="Copy Markdown"
+              content={markdown}
+              shortcut={{ modifiers: ["cmd"], key: "c" }}
+            />
+          )}
           <Action title="Open Preferences" onAction={openExtensionPreferences} />
         </ActionPanel>
       }
@@ -76,37 +82,32 @@ function DailyNoteDetail({ date, label }: { date: string; label: string }) {
   );
 }
 
-// ─── List of recent dates ─────────────────────────────────────────────────────
-
 export default function OpenDailyNote() {
   const dates = recentDates(14);
   const today = formatDate(new Date());
 
-  const entries: DailyNoteEntry[] = dates.map((d) => ({
-    date: d,
-    label: dateLabel(d),
-  }));
-
   return (
-    <List navigationTitle="Daily Notes" searchBarPlaceholder="Filter by date (YYYY-MM-DD)…">
+    <List navigationTitle="Daily Notes" searchBarPlaceholder="Filter by date…">
       <List.Section title="Recent Daily Notes">
-        {entries.map(({ date, label }) => (
-          <List.Item
-            key={date}
-            title={label}
-            subtitle={date !== label ? date : undefined}
-            accessories={date === today ? [{ tag: "Today" }] : []}
-            actions={
-              <ActionPanel>
-                <Action.Push
-                  title="View Note"
-                  target={<DailyNoteDetail date={date} label={label} />}
-                  shortcut={{ modifiers: [], key: "return" }}
-                />
-              </ActionPanel>
-            }
-          />
-        ))}
+        {dates.map((date) => {
+          const label = dateLabel(date);
+          return (
+            <List.Item
+              key={date}
+              title={label}
+              subtitle={date !== label ? date : undefined}
+              accessories={date === today ? [{ tag: "Today" }] : []}
+              actions={
+                <ActionPanel>
+                  <Action.Push
+                    title="View Note"
+                    target={<DailyNoteDetail date={date} label={label} />}
+                  />
+                </ActionPanel>
+              }
+            />
+          );
+        })}
       </List.Section>
     </List>
   );
