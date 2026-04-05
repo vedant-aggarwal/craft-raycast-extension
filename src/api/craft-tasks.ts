@@ -198,8 +198,12 @@ export async function appendToDailyNote(params: AppendToDailyNoteParams): Promis
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
+/** Format a Date as YYYY-MM-DD using LOCAL timezone (not UTC). */
 export function formatDate(date: Date): string {
-  return date.toISOString().split("T")[0];
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
 }
 
 export function recentDates(count = 7): string[] {
@@ -215,7 +219,10 @@ export function recentDates(count = 7): string[] {
 
 export function dateLabel(dateStr: string): string {
   const today = formatDate(new Date());
-  const yesterday = formatDate(new Date(Date.now() - 86400000));
+  // yesterday using local date arithmetic
+  const yd = new Date();
+  yd.setDate(yd.getDate() - 1);
+  const yesterday = formatDate(yd);
   if (dateStr === today) return "Today";
   if (dateStr === yesterday) return "Yesterday";
   return dateStr;
